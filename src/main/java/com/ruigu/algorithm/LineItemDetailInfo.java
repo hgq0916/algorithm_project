@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
+ * 线路明细信息
  * @author hugangquan
  * @date 2021/06/06 14:18
  */
@@ -16,7 +17,7 @@ import java.util.List;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class LineItem {
+public class LineItemDetailInfo {
 
     /**
      * 出发节点code
@@ -33,6 +34,6 @@ public class LineItem {
      */
     private String startNodeType;
 
-    private List<LineSequence> lineSequences = new ArrayList<>();
+    private List<LineItemSequence> lineItemSequences = new ArrayList<>();
 
 }

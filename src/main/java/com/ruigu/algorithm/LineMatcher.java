@@ -14,65 +14,138 @@ import java.util.stream.Collectors;
  */
 public class LineMatcher {
 
-    private Set<String> visit = new HashSet<String>();
+    private Map<Pair<String,String>,LineItemDetailInfo> lineMap;
 
-    private LinkedList<String> stack = new LinkedList<String>();
+    private Set<String> nodeSet = new HashSet<String>();
 
-    private List<LinkedList<String>> lines = new ArrayList<>();
-
-    private String start;
-
-    private String end;
-
-    public LineMatcher(String start, String end){
-        this.start = start;
-        this.end = end;
+    public LineMatcher( Map<Pair<String,String>,LineItemDetailInfo> lineMap){
+        this.lineMap = lineMap;
+        //记录所有的节点
+        for(Pair<String,String> pair: lineMap.keySet()){
+            nodeSet.add(pair.getKey());
+            nodeSet.add(pair.getValue());
+        }
     }
 
-    public List<LinkedList<String>> dfs(){
-        dfs(start);
-        return lines;
+    /**
+     * 根据起点和终点获取所有的节点路径
+     * @param startNode 起点
+     * @param endNode 终点
+     * @return
+     */
+    private List<LinkedList<String>> dfs(String startNode, String endNode){
+        LineDFS lineDFS = new LineDFS(startNode,endNode);
+        return lineDFS.dfs();
     }
 
-    public  void dfs(String pos){
+    private class LineDFS {
 
-        if(pos.equals(end)){
-            LinkedList<String> line = new LinkedList<>(stack);
-            line.addLast(end);
-            lines.add(line);
+        /**
+         * 出发节点
+         */
+        private String start;
+
+        /**
+         * 目的节点
+         */
+        private String end;
+
+        /**
+         * 已访问过的节点
+         */
+        private Set<String> visit = new HashSet<String>();
+
+        /**
+         * 节点路径
+         */
+        private LinkedList<String> stack = new LinkedList<String>();
+
+        /**
+         * 匹配到的节点路径
+         */
+        private List<LinkedList<String>> lines = new ArrayList<>();
+
+        LineDFS(String startNode, String endNode) {
+            this.start = startNode;
+            this.end = endNode;
         }
 
-        //将该节点标记为已访问
-        visit.add(pos);
+        List<LinkedList<String>> dfs(){
+            dfs(start);
+            return lines;
+        }
 
-        //将该节点入栈
-        stack.addLast(pos);
+        void dfs(String pos){
 
-        for(String node:LineHolder.nodeSet){
-            if(!visit.contains(node) && LineHolder.lineMap.containsKey(new Pair<String, String>(pos,node))){
-                dfs(node);
+            if(pos.equals(end)){
+                LinkedList<String> line = new LinkedList<>(stack);
+                line.addLast(end);
+                lines.add(line);
             }
+
+            //将该节点标记为已访问
+            visit.add(pos);
+
+            //将该节点入栈
+            stack.addLast(pos);
+
+            for(String node:LineMatcher.this.nodeSet){
+                if(!visit.contains(node) && LineMatcher.this.lineMap.containsKey(new Pair<String, String>(pos,node))){
+                    dfs(node);
+                }
+            }
+
+            //将该节点标记为未访问
+            visit.remove(pos);
+            //将该节点出栈
+            stack.pollLast();
         }
 
-        //将该节点标记为未访问
-        visit.remove(pos);
-        //将该节点出栈
-        stack.pollLast();
     }
 
-    public static void main(String[] args) throws IOException {
-        LineMatcher lineMatcher = new LineMatcher("NODE21060510340100001", "NODE21031614061200001");
+    /**
+     * 根据起点和终点匹配最优线路
+     * @param startNodeCode
+     * @param endNodeCode
+     * @return
+     */
+    public LinePlan matchesOptimal(String startNodeCode,String endNodeCode) {
+        List<LinePlan> matches = matches(startNodeCode, endNodeCode);
+        if(matches.size()>0){
+            return matches.get(0);
+        }
 
-        List<List<LineItem>> lineList = new ArrayList<>();
+        return null;
+    }
 
-        List<LinkedList<String>> lines = lineMatcher.dfs();
-        for(LinkedList<String> line : lines){
+    /**
+     * 根据起点和终点匹配所有线路
+     * @param startNodeCode
+     * @param endNodeCode
+     * @return
+     */
+    public List<LinePlan> matches(String startNodeCode,String endNodeCode) {
+
+        if(!nodeSet.contains(startNodeCode) || !nodeSet.contains(endNodeCode)){
+            //节点不包含起点或终点的任意一个
+            return new ArrayList<>();
+        }
+
+        List<LinkedList<String>> nodePaths = dfs(startNodeCode, endNodeCode);
+
+        if(nodePaths.isEmpty()){
+            return new ArrayList<>();
+        }
+
+        List<List<LineItemDetailInfo>> lineList = new ArrayList<>();
+
+        for(LinkedList<String> line : nodePaths){
             String preNode = null;
-            List<LineItem> list = new ArrayList<>();
+            List<LineItemDetailInfo> list = new ArrayList<>();
             for(String node:line){
                 if(preNode != null){
-                    LineItem lineItem = LineHolder.lineMap.get(new Pair<>(preNode, node));
-                    list.add(lineItem);
+                    LineItemDetailInfo lineItemDetailInfo = lineMap.get(new Pair<>(preNode, node));
+                    list.add(lineItemDetailInfo);
                 }
                 preNode = node;
             }
@@ -82,7 +155,105 @@ public class LineMatcher {
         //线路拆分 1*2*3
         List<List<SimpleLineItem>> lists = splitLine(lineList);
 
-        List<List<SimpleLineItem>> newList = new ArrayList<>();
+        /**
+         * 线路合并
+         */
+        List<List<SimpleLineItem>> mergeList = mergeLine(lists);
+
+        //淘汰中转点为地址组的线路
+        eliminateAddressGroupLine(mergeList);
+
+        //创建线路规划
+        List<LinePlan> linePlans = mergeList.stream().map(
+                list -> createLinePlan(list)
+        ).collect(Collectors.toList());
+
+        /**
+         * 对线路排序,根据权重比较线路的优劣
+         */
+        linePlans.sort((plan1,plan2)-> {
+            if(plan1.getWeight().compareTo(plan2.getWeight())>0){
+                return -1;
+            } else if(plan1.getWeight().compareTo(plan2.getWeight())<0){
+                return 1;
+            }
+
+            return 0;
+        });
+
+        return linePlans;
+    }
+
+    /**
+     * 创建线路规划
+     * @param simpleLineItems 线路集合
+     * @return
+     */
+    private LinePlan createLinePlan(List<SimpleLineItem> simpleLineItems) {
+        LinePlan linePlan = LinePlan.builder()
+                .simpleLineItems(simpleLineItems)
+                .lineCount(simpleLineItems.size())
+                .build();
+
+        int totalThroughNodeCount = 0;
+        int nodeThroughGroupCount = 0;
+
+        for(int i=0;i<simpleLineItems.size();i++){
+            SimpleLineItem simpleLineItem = simpleLineItems.get(i);
+            if(i!=0){
+                totalThroughNodeCount += 1;
+                if("delivery_collection_group".equals(simpleLineItem.getStartNodeType())){
+                    nodeThroughGroupCount += 1;
+                }
+            }
+            totalThroughNodeCount += simpleLineItem.getTotalThroughNodeCount();
+            nodeThroughGroupCount += simpleLineItem.getNodeThroughGroupCount();
+        }
+
+        linePlan.setTotalThroughNodeCount(totalThroughNodeCount);
+        linePlan.setNodeThroughGroupCount(nodeThroughGroupCount);
+
+        //计算权重(最大权重10): 线路个数(6)，节点个数(3)，地址组个数(1)
+        BigDecimal weight = BigDecimal.ZERO;
+
+        //使用的线路越少，权重越高
+        weight = weight.add(LineWeightEnum.LINE_COUNT.getWeight().divide(BigDecimal.valueOf(linePlan.getLineCount())));
+
+        //使用的节点个数越少，权重越高
+        weight = weight.add(LineWeightEnum.NODE_COUNT.getWeight().divide(BigDecimal.valueOf(linePlan.getTotalThroughNodeCount()+1)));
+
+        //使用对的地址组个数越少，权重越高
+        weight = weight.add(LineWeightEnum.NODE_GROUP_COUNT.getWeight().divide(BigDecimal.valueOf(linePlan.getNodeThroughGroupCount()+1)));
+
+        linePlan.setWeight(weight);
+
+        return linePlan;
+    }
+
+    /**
+     * 淘汰中转点为地址组的线路
+     * @param simpleLineItems
+     */
+    private void eliminateAddressGroupLine(List<List<SimpleLineItem>> simpleLineItems) {
+        Iterator<List<SimpleLineItem>> iterator = simpleLineItems.iterator();
+        while (iterator.hasNext()){
+            List<SimpleLineItem> next = iterator.next();
+            for(SimpleLineItem simpleLineItem : next){
+                if("delivery_collection_group".equals(simpleLineItem.getStartNodeType())){
+                    iterator.remove();
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * 将同一条线路的多个节点合并
+     * @param lists
+     * @return
+     */
+    private List<List<SimpleLineItem>> mergeLine(List<List<SimpleLineItem>> lists) {
+        List<List<SimpleLineItem>> mergeList = new ArrayList<>();
 
         //线路合并
         for(List<SimpleLineItem> lineItems : lists){
@@ -106,104 +277,10 @@ public class LineMatcher {
                 newItem.add(item);
                 preItem = item;
             }
-            newList.add(newItem);
+            mergeList.add(newItem);
         }
 
-        //淘汰中转点为地址组的线路
-        Iterator<List<SimpleLineItem>> iterator = newList.iterator();
-        while (iterator.hasNext()){
-            List<SimpleLineItem> next = iterator.next();
-            for(SimpleLineItem simpleLineItem : next){
-                if("delivery_collection_group".equals(simpleLineItem.getStartNodeType())){
-                    iterator.remove();
-                    break;
-                }
-            }
-        }
-
-        List<LinePlan> linePlans = newList.stream().map(
-                list -> {
-                    LinePlan linePlan = LinePlan.builder()
-                            .simpleLineItems(list)
-                            .lineCount(list.size())
-                            .build();
-
-                    int totalThroughNodeCount = 0;
-                    int nodeThroughGroupCount = 0;
-
-                    for(int i=0;i<list.size();i++){
-                        SimpleLineItem simpleLineItem = list.get(i);
-                        if(i!=0){
-                            totalThroughNodeCount += 1;
-                            if("delivery_collection_group".equals(simpleLineItem.getStartNodeType())){
-                                nodeThroughGroupCount += 1;
-                            }
-                        }
-                        totalThroughNodeCount += simpleLineItem.getTotalThroughNodeCount();
-                        nodeThroughGroupCount += simpleLineItem.getNodeThroughGroupCount();
-                    }
-
-                    linePlan.setTotalThroughNodeCount(totalThroughNodeCount);
-                    linePlan.setNodeThroughGroupCount(nodeThroughGroupCount);
-
-                    //计算权重(最大权重10): 线路个数(6)，节点个数(3)，地址组个数(1)
-                    BigDecimal weight = BigDecimal.ZERO;
-
-                    //使用的线路越少，权重越高
-                    weight = weight.add(LineWeightEnum.LINE_COUNT.getWeight().divide(BigDecimal.valueOf(linePlan.getLineCount())));
-
-                    //使用的节点个数越少，权重越高
-                    weight = weight.add(LineWeightEnum.NODE_COUNT.getWeight().divide(BigDecimal.valueOf(linePlan.getTotalThroughNodeCount()+1)));
-
-                    //使用对的地址组个数越少，权重越高
-                    weight = weight.add(LineWeightEnum.NODE_GROUP_COUNT.getWeight().divide(BigDecimal.valueOf(linePlan.getNodeThroughGroupCount()+1)));
-
-                    linePlan.setWeight(weight);
-
-                    return linePlan;
-                }
-        ).collect(Collectors.toList());
-
-        /**
-         * 对线路排序,按照中转次数从小到大排序，如果中转次数相同，比较途径节点的个数，
-         * 如果途径节点个数相同，则比较经过的地址组个数
-         */
-        linePlans.sort((plan1,plan2)-> {
-            if(plan1.getWeight().compareTo(plan2.getWeight())>0){
-                return -1;
-            } else if(plan1.getWeight().compareTo(plan2.getWeight())<0){
-                return 1;
-            }
-
-            return 0;
-        });
-
-        printLines(linePlans);
-    }
-
-    private static void printLines(List<LinePlan> lineList) {
-
-        int i=1;
-        for(LinePlan linePlan:lineList){
-            StringBuffer buffer = new StringBuffer("第"+(i++)+"条方案:");
-            for(SimpleLineItem lineItem:linePlan.getSimpleLineItems()){
-                buffer.append(lineItem.getLineCode()).append(":")
-                        .append(lineItem.getStartNodeCode())
-                        .append("(")
-                        .append(lineItem.getStartNodeType())
-                        .append(")")
-                        .append("--")
-                        .append(lineItem.getEndNodeCode())
-                        .append("[")
-                        .append(lineItem.getStartNodeSequence())
-                        .append("-")
-                        .append(lineItem.getEndNodeSequence())
-                        .append("]")
-                        .append("-->");
-            }
-            System.out.println(buffer.substring(0,buffer.length()-3));
-        }
-
+        return mergeList;
     }
 
     /**
@@ -211,12 +288,12 @@ public class LineMatcher {
      * @param lines
      * @return
      */
-    private static List<List<SimpleLineItem>> splitLine(List<List<LineItem>> lines) {
+    private static List<List<SimpleLineItem>> splitLine(List<List<LineItemDetailInfo>> lines) {
 
         List<List<SimpleLineItem>> lists = new ArrayList<>();
 
-       for(List<LineItem> lineItems: lines){
-           List<List<SimpleLineItem>> simpleLineItems = splitLineItem(lineItems);
+       for(List<LineItemDetailInfo> lineItemDetailInfos : lines){
+           List<List<SimpleLineItem>> simpleLineItems = splitLineItem(lineItemDetailInfos);
            lists.addAll(simpleLineItems);
        }
 
@@ -224,7 +301,7 @@ public class LineMatcher {
 
     }
 
-    private static List<List<SimpleLineItem>> splitLineItem(List<LineItem> lineItems) {
+    private static List<List<SimpleLineItem>> splitLineItem(List<LineItemDetailInfo> lineItemDetailInfos) {
 
         //存储线路
         List<List<SimpleLineItem>> lists = new ArrayList<>();
@@ -232,48 +309,55 @@ public class LineMatcher {
         //记录访问的节点
         LinkedList<SimpleLineItem> stack = new LinkedList<>();
 
-        splitLineItem(lists,stack,lineItems,0);
+        splitLineItem(lists,stack, lineItemDetailInfos,0);
 
         return lists;
     }
 
-    private static void splitLineItem(List<List<SimpleLineItem>> lists,LinkedList<SimpleLineItem> stack,
-                                     List<LineItem> lineItems, int index) {
+    /**
+     * 递归拆分线路
+     * @param lists
+     * @param stack
+     * @param lineItemDetailInfos
+     * @param index
+     */
+    private static void splitLineItem(List<List<SimpleLineItem>> lists, LinkedList<SimpleLineItem> stack,
+                                      List<LineItemDetailInfo> lineItemDetailInfos, int index) {
 
-        LineItem lineItem = lineItems.get(index);
-        if(index == lineItems.size()-1){
+        LineItemDetailInfo lineItemDetailInfo = lineItemDetailInfos.get(index);
+        if(index == lineItemDetailInfos.size()-1){
 
-            List<LineSequence> lineSequences = lineItem.getLineSequences();
+            List<LineItemSequence> lineItemSequences = lineItemDetailInfo.getLineItemSequences();
 
-            for(LineSequence lineSequence: lineSequences){
+            for(LineItemSequence lineItemSequence : lineItemSequences){
                 List<SimpleLineItem> simpleLineItems = new ArrayList<>(stack);
                 simpleLineItems.add(SimpleLineItem.builder()
-                        .startNodeCode(lineItem.getStartNodeCode())
-                        .endNodeCode(lineItem.getEndNodeCode())
-                        .startNodeSequence(lineSequence.getStartNodeSequence())
-                        .endNodeSequence(lineSequence.getEndNodeSequence())
-                        .lineCode(lineSequence.getLineCode())
-                        .startNodeType(lineItem.getStartNodeType())
+                        .startNodeCode(lineItemDetailInfo.getStartNodeCode())
+                        .endNodeCode(lineItemDetailInfo.getEndNodeCode())
+                        .startNodeSequence(lineItemSequence.getStartNodeSequence())
+                        .endNodeSequence(lineItemSequence.getEndNodeSequence())
+                        .lineCode(lineItemSequence.getLineCode())
+                        .startNodeType(lineItemDetailInfo.getStartNodeType())
                         .build());
                 lists.add(simpleLineItems);
             }
             return;
         }
 
-        List<LineSequence> lineSequences = lineItem.getLineSequences();
+        List<LineItemSequence> lineItemSequences = lineItemDetailInfo.getLineItemSequences();
 
-        for(LineSequence lineSequence:lineSequences){
+        for(LineItemSequence lineItemSequence : lineItemSequences){
 
             stack.add(SimpleLineItem.builder()
-                    .startNodeCode(lineItem.getStartNodeCode())
-                    .endNodeCode(lineItem.getEndNodeCode())
-                    .startNodeSequence(lineSequence.getStartNodeSequence())
-                    .endNodeSequence(lineSequence.getEndNodeSequence())
-                    .lineCode(lineSequence.getLineCode())
-                    .startNodeType(lineItem.getStartNodeType())
+                    .startNodeCode(lineItemDetailInfo.getStartNodeCode())
+                    .endNodeCode(lineItemDetailInfo.getEndNodeCode())
+                    .startNodeSequence(lineItemSequence.getStartNodeSequence())
+                    .endNodeSequence(lineItemSequence.getEndNodeSequence())
+                    .lineCode(lineItemSequence.getLineCode())
+                    .startNodeType(lineItemDetailInfo.getStartNodeType())
                     .build());
 
-            splitLineItem(lists,stack,lineItems,index+1);
+            splitLineItem(lists,stack, lineItemDetailInfos,index+1);
 
             stack.pollLast();
         }
