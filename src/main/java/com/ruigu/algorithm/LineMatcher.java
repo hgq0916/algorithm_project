@@ -239,7 +239,7 @@ public class LineMatcher {
         while (iterator.hasNext()){
             List<SimpleLineItem> next = iterator.next();
             for(SimpleLineItem simpleLineItem : next){
-                if("delivery_collection_group".equals(simpleLineItem.getStartNodeType())){
+                if(NodeTypeEnum.DELIVERY_COLLECTION_GROUP.getCode().equals(simpleLineItem.getStartNodeType())){
                     iterator.remove();
                     break;
                 }
@@ -268,7 +268,7 @@ public class LineMatcher {
                         preItem.setEndNodeCode(item.getEndNodeCode());
                         preItem.setEndNodeSequence(item.getEndNodeSequence());
                         preItem.setTotalThroughNodeCount(preItem.getTotalThroughNodeCount()+1);
-                        if("delivery_collection_group".equals(item.getStartNodeType())){
+                        if(NodeTypeEnum.DELIVERY_COLLECTION_GROUP.getCode().equals(item.getStartNodeType())){
                             preItem.setNodeThroughGroupCount(preItem.getNodeThroughGroupCount()+1);
                         }
                         continue;
