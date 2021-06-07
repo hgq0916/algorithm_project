@@ -2,9 +2,11 @@ package com.ruigu.algorithm;
 
 import javafx.util.Pair;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 线路匹配测试
@@ -14,6 +16,40 @@ import java.util.Map;
 public class LineMatcherTest {
 
     public static void main(String[] args) {
+
+        List<LineItemCompoisteDTO> lineItemCompoisteDTOS = new ArrayList<>();
+
+        Map<Pair, LineItemDetailInfo> lineItemDetailInfoMap = lineItemCompoisteDTOS.stream().parallel()
+                .collect(Collectors.toMap(
+                dto -> new Pair(dto.getStartNodeCode(), dto.getEndNodeCode()), dto -> {
+
+                    LineItemDetailInfo lineItemDetailInfo = LineItemDetailInfo.builder()
+                            .startNodeCode(dto.getStartNodeCode())
+                            .endNodeCode(dto.getEndNodeCode())
+                            .startNodeType(dto.getStartNodeType())
+                            .build();
+
+                    String lineCodeAndSequence = dto.getLineCodeAndSequence();
+
+                    String[] lines = lineCodeAndSequence.split(",");
+
+                    List<LineItemSequence> lineItemSequences = new ArrayList<>();
+                    for(String line : lines){
+                        String[] lineInfo = line.split("-");
+                        LineItemSequence lineItemSequence = LineItemSequence.builder()
+                                .lineCode(lineInfo[0])
+                                .startNodeSequence(Integer.parseInt(lineInfo[1]))
+                                .endNodeSequence(Integer.parseInt(lineInfo[2]))
+                                .build();
+                        lineItemSequences.add(lineItemSequence);
+                    }
+
+                    lineItemDetailInfo.setLineItemSequences(lineItemSequences);
+
+                    return lineItemDetailInfo;
+
+                }
+        ));
 
         Map<Pair<String, String>, LineItemDetailInfo> lineMap = new HashMap<>(LineHolder.lineMap);
 
